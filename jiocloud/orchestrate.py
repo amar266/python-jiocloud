@@ -28,6 +28,7 @@ import json
 import yaml
 import consulate
 from urllib3.exceptions import HTTPError
+from ConfigParser import SafeConfigParser
 
 class DeploymentOrchestrator(object):
     UPDATE_AVAILABLE = 0
@@ -194,14 +195,36 @@ class DeploymentOrchestrator(object):
                 return ''
             raise
 
-    def debug_timeout(self, version):
-        self.get_failures(True) 
-        if self.hosts_at_version(version):
-            print "Registered hosts in consul with key name Running_Versions are:"
-            for reg_host in self.hosts_at_version(version):
-                print "   %s" % reg_host 
+    def debug_timeout(self, version, debug_hosts):
+        if debug_hosts is False:
+            self.get_failures(True)
+            if self.hosts_at_version(version):
+                print "Registered hosts in consul with key name Running_Versions are:"
+                for reg_host in self.hosts_at_version(version):
+                    print "   %s" % reg_host
+            else:
+                print "No Hosts registered!"
         else:
-            print "No Hosts registered!"
+            if os.path.isfile("/etc/debug_timeout.ini"):
+                parser = SafeConfigParser()
+                parser.read("/etc/debug_timeout.ini")
+                debug_files = parser.get('main', 'files')
+                debug_file = debug_files.split(" ")
+                for d_files in debug_file:
+                    d_file = d_files.split(":")
+                    try:
+                        with open(d_file[0], "r") as fp:
+                            fp.seek(0, 2)
+                            fsize = fp.tell()
+                            fp.seek(max(fsize-int(d_file[1]), 0), 0)
+                            lines = fp.readlines()
+                            print "Syslog information of %s" % socket.gethostname()
+                            for line in lines:
+                                print "  %s" % line
+                    except IOError, e:
+                        raise Exception('Exception Found : %s' % e)
+            else:
+                print "Config File Not Found"
 
 
 def main(argv=sys.argv[1:]):
@@ -256,6 +279,7 @@ def main(argv=sys.argv[1:]):
 
     debug_timeout_parser = subparsers.add_parser('debug_timeout', help="Provides debug information when script gets  timed out")
     debug_timeout_parser.add_argument('version', help="Version to look for")
+    debug_timeout_parser.add_argument('--debug_hosts', action='store_true', help="Enable debuging on hosts")
     check_single_version_parser.add_argument('--verbose', '-v', action='store_true', help='Be verbose')
     args = parser.parse_args(argv)
 
@@ -303,7 +327,8 @@ def main(argv=sys.argv[1:]):
         print msg
         return pending_update
     elif args.subcmd == 'debug_timeout':
-        return not do.debug_timeout(args.version)
+        debug_host = args.debug_hosts or False
+        return not do.debug_timeout(args.version, debug_host)
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
